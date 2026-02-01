@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Election Dodger 2026 - Developed by SHADOW JOKER</title>
+    <style>
+        body { font-family: sans-serif; background: linear-gradient(to bottom, #4CAF50, #2196F3); display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; color: white; text-shadow: 1px 1px 2px black; }
+        #game-container { text-align: center; background: rgba(0,0,0,0.4); padding: 20px; border-radius: 15px; max-width: 420px; }
+        h1 { color: #FFEB3B; margin: 10px; font-size: 1.8em; }
+        #game-canvas { border: 4px solid #FFEB3B; background-color: #fff; border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        #start-button, #restart-button { margin: 15px; padding: 12px 30px; font-size: 18px; cursor: pointer; background: #FF5722; color: white; border: none; border-radius: 8px; }
+        #game-over { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); padding: 30px; border-radius: 15px; color: #FFEB3B; display: none; }
+        #instructions { font-size: 14px; margin-top: 10px; }
+        #boost-msg { position: absolute; top: 100px; left: 50%; transform: translateX(-50%); font-size: 24px; color: #FFD700; font-weight: bold; display: none; }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <h1>Election Dodger 2026 🔥</h1>
+        <p>Developed by <strong>SHADOW JOKER</strong></p>
+        <p>ভোট কালেক্ট করো, ফেক প্রমিস ডজ করো! স্কোর: <span id="score">0</span></p>
+        <canvas id="game-canvas" width="400" height="600"></canvas>
+        <div id="boost-msg">Tarique ভাইয়ের Boost! জিতবোই! 🚀</div>
+        
+        <div id="game-over">
+            <h2>গেম ওভার!</h2>
+            <p id="final-score"></p>
+            <p>Developed by SHADOW JOKER 😎</p>
+            <p>আরেকবার ট্রাই করো, এবার জিতবি!</p>
+            <button id="restart-button">রিস্টার্ট</button>
+        </div>
+        
+        <button id="start-button">শুরু করো!</button>
+        <p id="instructions">কীবোর্ড: ←→ মুভ, Space জাম্প | মোবাইল: টাচ লেফট/রাইট/জাম্প</p>
+    </div>
+
+    <!-- সাউন্ড (CDN) -->
+    <audio id="bg-music" loop preload="auto"><source src="https://soundimage.org/wp-content/uploads/2017/05/Puzzle-Dreams.mp3" type="audio/mpeg"></audio>
+    <audio id="collect-sound" preload="auto"><source src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_3d2b7d7e8a.mp3?filename=coins-15971.mp3" type="audio/mpeg"></audio>
+    <audio id="jump-sound" preload="auto"><source src="https://assets.mixkit.co/sfx/preview/mixkit-arcade-game-jump-coin-2163.mp3" type="audio/mpeg"></audio>
+    <audio id="crash-sound" preload="auto"><source src="https://assets.mixkit.co/sfx/preview/mixkit-cartoon-failure-sound-2802.mp3" type="audio/mpeg"></audio>
+    <audio id="boost-sound" preload="auto"><source src="https://assets.mixkit.co/sfx/preview/mixkit-achievement-bell-2059.mp3" type="audio/mpeg"></audio>
+
+    <script>
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const startBtn = document.getElementById('start-button');
+        const gameOverDiv = document.getElementById('game-over');
+        const finalScore = document.getElementById('final-score');
+        const restartBtn = document.getElementById('restart-button');
+        const boostMsg = document.getElementById('boost-msg');
+
+        const bgMusic = document.getElementById('bg-music');
+        const collectSound = document.getElementById('collect-sound');
+        const jumpSound = document.getElementById('jump-sound');
+        const crashSound = document.getElementById('crash-sound');
+        const boostSound = document.getElementById('boost-sound');
+        bgMusic.volume = 0.4;
+
+        let player = { x: 175, y: 500, w: 50, h: 50, speed: 6, vy: 0, jumping: false };
+        let obstacles = [];
+        let votes = [];
+        let boosts = []; // নতুন: BNP Leader boost items
+        let score = 0;
+        let gameRunning = false;
+        let lastTime = 0;
+        let gameSpeed = 3;
+        let maxSpeed = 9;
+
+        const funnyObstacles = [
+            { emoji: '🤥 ফেক!', effect: 'slow' },
+            { emoji: '🪧 প্রটেস্ট!', effect: 'block' },
+            { emoji: '💰 করাপশন!', effect: 'gameover' },
+            { emoji: '🚲 রিকশা!', effect: 'block' },
+            { emoji: '☕ চা!', effect: 'slow' },
+            { emoji: '🚗 ট্র্যাফিক!', effect: 'block' }
+        ];
+        const voteEmoji = '🗳️';
+        const boostEmoji = '🇧🇳 Tarique!'; // BNP flag + name (সিম্পল emoji)
+
+        ctx.font = '25px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        function drawPlayer() {
+            ctx.fillStyle = score > 20 ? '#FF5722' : '#4CAF50';
+            ctx.fillRect(player.x, player.y, player.w, player.h);
+            ctx.fillStyle = 'white';
+            ctx.fillText('🧑‍💼', player.x + 25, player.y + 25);
+        }
+
+        function drawItems(items, isVote = false, isBoost = false) {
+            items.forEach(item => {
+                ctx.fillStyle = isVote ? '#2196F3' : (isBoost ? '#006600' : (item.effect === 'gameover' ? 'red' : 'orange'));
+                ctx.fillText(isVote ? voteEmoji : (isBoost ? boostEmoji : item.emoji), item.x + 30, item.y + 30);
+            });
+        }
+
+        function showBoostMsg() {
+            boostMsg.style.display = 'block';
+            boostSound.currentTime = 0; boostSound.play().catch(() => {});
+            setTimeout(() => { boostMsg.style.display = 'none'; }, 2000);
+        }
+
+        function update(delta) {
+            if (!gameRunning) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            player.vy += 0.8;
+            player.y += player.vy * delta * 60;
+            if (player.y >= 500) { player.y = 500; player.vy = 0; player.jumping = false; }
+
+            drawPlayer();
+            drawItems(obstacles);
+            drawItems(votes, true);
+            drawItems(boosts, false, true);
+
+            const spd = gameSpeed * delta * 60;
+
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const o = obstacles[i];
+                o.y += spd;
+                if (o.y > canvas.height + 60) { obstacles.splice(i, 1); continue; }
+                if (Math.abs(o.x - player.x) < 80 && Math.abs(o.y - player.y) < 80 && checkCollision(player, o)) {
+                    if (o.effect === 'gameover') {
+                        crashSound.currentTime = 0; crashSound.play().catch(() => {});
+                        endGame(); return;
+                    } else if (o.effect === 'slow') {
+                        player.speed = 3; setTimeout(() => { if (gameRunning) player.speed = 6; }, 2000);
+                    } else {
+                        player.x -= 30; if (player.x < 0) player.x = 0;
+                    }
+                }
+            }
+
+            for (let i = votes.length - 1; i >= 0; i--) {
+                const v = votes[i];
+                v.y += spd;
+                if (v.y > canvas.height + 60) { votes.splice(i, 1); continue; }
+                if (Math.abs(v.x - player.x) < 60 && Math.abs(v.y - player.y) < 60 && checkCollision(player, v)) {
+                    score += 1; scoreEl.textContent = score;
+                    collectSound.currentTime = 0; collectSound.play().catch(() => {});
+                    votes.splice(i, 1);
+                    if (score % 10 === 0 && gameSpeed < maxSpeed) gameSpeed += 0.4;
+                }
+            }
+
+            for (let i = boosts.length - 1; i >= 0; i--) {
+                const b = boosts[i];
+                b.y += spd;
+                if (b.y > canvas.height + 60) { boosts.splice(i, 1); continue; }
+                if (Math.abs(b.x - player.x) < 60 && Math.abs(b.y - player.y) < 60 && checkCollision(player, b)) {
+                    score += 5; scoreEl.textContent = score;
+                    player.speed = 10; // Boost speed
+                    setTimeout(() => { if (gameRunning) player.speed = 6; }, 5000);
+                    showBoostMsg();
+                    collectSound.currentTime = 0; collectSound.play().catch(() => {});
+                    boosts.splice(i, 1);
+                }
+            }
+
+            if (Math.random() < 0.02 + score * 0.0005) {
+                const rand = Math.floor(Math.random() * funnyObstacles.length);
+                obstacles.push({ x: Math.random() * (canvas.width - 60), y: -60, w: 60, h: 60, ...funnyObstacles[rand] });
+            }
+            if (Math.random() < 0.035) {
+                votes.push({ x: Math.random() * (canvas.width - 50), y: -50, w: 50, h: 50 });
+            }
+            if (Math.random() < 0.008) { // Rare BNP boost
+                boosts.push({ x: Math.random() * (canvas.width - 60), y: -60, w: 60, h: 60 });
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function checkCollision(a, b) {
+            return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+        }
+
+        function gameLoop(time = 0) {
+            if (!lastTime) lastTime = time;
+            const delta = (time - lastTime) / 1000;
+            lastTime = time;
+            update(delta);
+        }
+
+        document.addEventListener('keydown', e => {
+            if (!gameRunning) return;
+            if (e.key === 'ArrowLeft' && player.x > 0) player.x -= player.speed;
+            if (e.key === 'ArrowRight' && player.x < canvas.width - player.w) player.x += player.speed;
+            if (e.key === ' ' && !player.jumping && player.y >= 490) {
+                player.jumping = true; player.vy = -12;
+                jumpSound.currentTime = 0; jumpSound.play().catch(() => {});
+            }
+        });
+
+        let touchX = 0;
+        canvas.addEventListener('touchstart', e => { if (gameRunning) touchX = e.touches[0].clientX; });
+        canvas.addEventListener('touchmove', e => {
+            if (!gameRunning) return; e.preventDefault();
+            const dx = (e.touches[0].clientX - touchX) / 5;
+            player.x += dx;
+            player.x = Math.max(0, Math.min(canvas.width - player.w, player.x));
+            touchX = e.touches[0].clientX;
+        });
+        canvas.addEventListener('touchend', e => {
+            if (!gameRunning) return;
+            if (Math.abs(e.changedTouches[0].clientX - touchX) < 30 && !player.jumping && player.y >= 490) {
+                player.jumping = true; player.vy = -12;
+                jumpSound.currentTime = 0; jumpSound.play().catch(() => {});
+            }
+        });
+
+        function startGame() {
+            gameRunning = true;
+            gameOverDiv.style.display = 'none';
+            startBtn.style.display = 'none';
+            score = 0; scoreEl.textContent = 0;
+            gameSpeed = 3; lastTime = 0;
+            obstacles = []; votes = []; boosts = [];
+            player.x = 175; player.y = 500; player.vy = 0; player.speed = 6;
+            bgMusic.currentTime = 0; bgMusic.play().catch(() => {});
+            requestAnimationFrame(gameLoop);
+        }
+
+        function endGame() {
+            gameRunning = false;
+            bgMusic.pause();
+            finalScore.textContent = `তোমার স্কোর: ${score} ভোট!`;
+            gameOverDiv.style.display = 'block';
+        }
+
+        startBtn.addEventListener('click', startGame);
+        restartBtn.addEventListener('click', startGame);
+    </script>
+</body>
+</html>
